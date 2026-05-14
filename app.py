@@ -143,7 +143,7 @@ class TelnetProcessor:
                 
                 for index, row in self.df_valid.iterrows():
                     case_id = str(row['CaseID']).zfill(20)
-                    location_id = str(row['LocationID']).strip().upper()
+                    location_id = str(row['MLP']).strip().upper()
                     
                     self.status['current_case'] = f"CaseID: {case_id}, Location: {location_id}"
                     self.add_log(f"Processing {index+1}/{self.status['valid_count']}: {case_id}")
@@ -314,7 +314,7 @@ with st.sidebar:
     st.divider()
     st.markdown("""
     **Instructions:**
-    1. Upload Excel (CaseID & LocationID)
+    1. Upload Excel (CaseID & MLP)
     2. Click Start Processing
     3. Results emailed automatically
     """)
@@ -330,11 +330,11 @@ with col1:
         
         if 'CASEID' in df_raw.columns:
             df_raw.rename(columns={'CASEID': 'CaseID'}, inplace=True)
-        if 'LOCATIONID' in df_raw.columns:
-            df_raw.rename(columns={'LOCATIONID': 'LocationID'}, inplace=True)
+        if 'MLP' in df_raw.columns:
+            df_raw.rename(columns={'MLP': 'MLP'}, inplace=True)
         
-        if 'LocationID' in df_raw.columns:
-            df_raw['Valid_Format'] = df_raw['LocationID'].apply(validate_location_id)
+        if 'MLP' in df_raw.columns:
+            df_raw['Valid_Format'] = df_raw['MLP'].apply(validate_location_id)
             df_valid = df_raw[df_raw['Valid_Format'] == True].copy()
             df_invalid = df_raw[df_raw['Valid_Format'] == False].copy()
             df_valid = df_valid.drop(columns=['Valid_Format'])
@@ -357,7 +357,7 @@ with col1:
                     st.success("Processing started!")
                     st.rerun()
         else:
-            st.error("Missing LocationID column")
+            st.error("Missing MLP column")
 
 with col2:
     if st.session_state.current_status:
