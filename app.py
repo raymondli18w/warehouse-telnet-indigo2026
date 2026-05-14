@@ -60,11 +60,8 @@ class TelnetProcessor:
         self.MAIN_MENU_1 = "1"
         self.SUB_MENU_7 = "7"
         
-        # Timing delays
-        self.AFTER_CONNECT_DELAY = 2
-        self.BETWEEN_COMMANDS_DELAY = 1
-        self.AFTER_LOGIN_DELAY = 2
-        self.PAUSE_BETWEEN_CASES = 2
+        # ALL DELAYS ARE 2 SECONDS
+        self.DELAY_ALL = 2.0  # Everything is 2 seconds
         
         # Console buffer
         self.console_lines = []
@@ -112,99 +109,135 @@ class TelnetProcessor:
         print(log_entry)
     
     async def connect_and_login_async(self):
-        """Async telnet connection without timeout parameter"""
+        """Connect and login to telnet - fresh connection each time"""
         self.add_console("=" * 50)
-        self.add_console("STARTING TELNET CONNECTION")
+        self.add_console("CONNECTING TO TELNET...")
         
         try:
-            # Step 1: Connect (no timeout parameter)
-            self.add_console(f"Step 1: Connecting to {self.HOST}:{self.PORT}...")
+            # Connect
+            self.add_console(f"Connecting to {self.HOST}:{self.PORT}...")
             reader, writer = await telnetlib3.open_connection(self.HOST, self.PORT)
-            self.add_console(f"✅ Connected successfully!")
+            self.add_console(f"✅ Connected!")
             
-            # Step 2: Wait 2 seconds
-            self.add_console(f"⏱️ Waiting {self.AFTER_CONNECT_DELAY} second(s)...")
-            await asyncio.sleep(self.AFTER_CONNECT_DELAY)
+            # Wait 2 seconds after connect
+            self.add_console(f"⏱️ Waiting {self.DELAY_ALL} second(s)...")
+            await asyncio.sleep(self.DELAY_ALL)
             
-            # Step 3: Send Enter
-            self.add_console(f"Step 2: Sending Enter...")
+            # Send Enter
+            self.add_console(f"Sending Enter...")
             writer.write("\r\n")
             await writer.drain()
-            self.add_console(f"✅ Enter sent")
-            await asyncio.sleep(self.BETWEEN_COMMANDS_DELAY)
+            await asyncio.sleep(self.DELAY_ALL)
             
-            # Step 4: Send username
-            self.add_console(f"Step 3: Sending username: {self.USERNAME}")
+            # Send username
+            self.add_console(f"Sending username: {self.USERNAME}")
             writer.write(f"{self.USERNAME}\r\n")
             await writer.drain()
-            self.add_console(f"✅ Username sent")
-            await asyncio.sleep(self.AFTER_LOGIN_DELAY)
+            await asyncio.sleep(self.DELAY_ALL)
             
-            # Step 5: Send password
-            self.add_console(f"Step 4: Sending password...")
+            # Send password
+            self.add_console(f"Sending password...")
             writer.write(f"{self.PASSWORD}\r\n")
             await writer.drain()
-            self.add_console(f"✅ Password sent")
-            await asyncio.sleep(self.AFTER_LOGIN_DELAY)
+            await asyncio.sleep(self.DELAY_ALL)
             
-            # Step 6: Main menu
-            self.add_console(f"Step 5: Sending menu option {self.MAIN_MENU_1}")
+            # Navigate to main menu (option 1)
+            self.add_console(f"Sending menu option: {self.MAIN_MENU_1}")
             writer.write(f"{self.MAIN_MENU_1}\r\n")
             await writer.drain()
-            self.add_console(f"✅ Menu option {self.MAIN_MENU_1} sent")
-            await asyncio.sleep(self.BETWEEN_COMMANDS_DELAY)
+            await asyncio.sleep(self.DELAY_ALL)
             
-            # Step 7: Sub menu
-            self.add_console(f"Step 6: Sending menu option {self.SUB_MENU_7}")
+            # Navigate to sub menu (option 7)
+            self.add_console(f"Sending menu option: {self.SUB_MENU_7}")
             writer.write(f"{self.SUB_MENU_7}\r\n")
             await writer.drain()
-            self.add_console(f"✅ Menu option {self.SUB_MENU_7} sent")
-            await asyncio.sleep(self.BETWEEN_COMMANDS_DELAY)
+            await asyncio.sleep(self.DELAY_ALL)
             
-            self.add_console("✅ TELNET LOGIN COMPLETE!")
+            self.add_console("✅ Telnet login successful!")
             self.add_console("=" * 50)
-            return writer
+            return reader, writer
             
         except Exception as e:
-            self.add_console(f"TELNET ERROR: {str(e)}", is_error=True)
-            self.add_console(f"Error type: {type(e).__name__}", is_error=True)
-            return None
+            self.add_console(f"❌ Telnet connection failed: {str(e)}", is_error=True)
+            return None, None
     
-    async def scan_case_async(self, writer, case_id, location_id):
-        """Async scan case"""
+    async def scan_one_case_async(self, case_id, location_id):
+        """Complete fresh connection for ONE case - login, scan, logout"""
+        self.add_console(f"\n{'='*40}")
+        self.add_console(f"STARTING SCAN FOR CASE")
+        self.add_console(f"CaseID: {case_id}")
+        self.add_console(f"LocationID: {location_id}")
+        self.add_console(f"{'='*40}")
+        
+        reader = None
+        writer = None
+        
         try:
+            # Step 1: Connect and login
+            reader, writer = await self.connect_and_login_async()
+            
+            if not writer:
+                self.add_console(f"❌ Failed to connect", is_error=True)
+                return "Error"
+            
+            # Step 2: Send CaseID
             self.add_console(f"Sending CaseID: {case_id}")
             writer.write(f"{case_id}\r\n")
             await writer.drain()
-            await asyncio.sleep(self.BETWEEN_COMMANDS_DELAY)
+            await asyncio.sleep(self.DELAY_ALL)
             
+            # Step 3: Send LocationID
             self.add_console(f"Sending LocationID: {location_id}")
             writer.write(f"{location_id}\r\n")
             await writer.drain()
-            await asyncio.sleep(self.PAUSE_BETWEEN_CASES)
+            await asyncio.sleep(self.DELAY_ALL)
             
-            # Try to read response
+            # Step 4: Read response to verify
             try:
-                # Read any available data
-                data = await reader.read(1024) if 'reader' in locals() else None
-                if data:
-                    self.add_console(f"Response: {data[:200]}")
-            except:
-                pass
-            
-            self.add_console(f"✅ Scan complete")
-            return "Success"
+                self.add_console(f"Checking response...")
+                output = ""
+                try:
+                    data = await asyncio.wait_for(reader.read(1000), timeout=5)
+                    if data:
+                        output = data
+                        self.add_console(f"Response received: {output[:200]}")
+                except asyncio.TimeoutError:
+                    self.add_console(f"No response (timeout) - assuming success")
+                except Exception as e:
+                    self.add_console(f"Error reading response: {str(e)[:100]}")
+                
+                # Check for error
+                if output and "error" in output.lower():
+                    self.add_console(f"❌ Error detected!", is_error=True)
+                    return "Error"
+                else:
+                    self.add_console(f"✅ SCAN SUCCESSFUL!")
+                    return "Success"
+                    
+            except Exception as e:
+                self.add_console(f"Error checking response: {str(e)[:100]}", is_error=True)
+                return "Error"
             
         except Exception as e:
-            self.add_console(f"Scan error: {str(e)}", is_error=True)
+            self.add_console(f"❌ Exception: {str(e)[:100]}", is_error=True)
             return "Error"
+        
+        finally:
+            # Close connection
+            if writer:
+                writer.close()
+                await writer.wait_closed()
+                self.add_console(f"Connection closed for this case")
+                await asyncio.sleep(1)  # Small pause before next case
     
     async def process_async(self):
-        """Async main processing"""
+        """Process each case with fresh connection"""
         try:
             self.add_console("=" * 60)
-            self.add_console("STARTING PROCESSING")
-            self.add_console(f"Valid cases: {self.status['valid_count']}")
+            self.add_console("STARTING TELNET PROCESSING")
+            self.add_console(f"Total valid cases: {self.status['valid_count']}")
+            self.add_console(f"Strategy: NEW CONNECTION FOR EACH CASE")
+            self.add_console(f"Delay between steps: {self.DELAY_ALL} seconds")
             self.add_console("=" * 60)
             
             if not self.df_valid.empty:
@@ -215,42 +248,26 @@ class TelnetProcessor:
                     case_id = str(row['CaseID']).zfill(20)
                     location_id = str(row['LocationID']).strip().upper()
                     
-                    self.add_console(f"\n--- Case {index+1}/{self.status['valid_count']} ---")
-                    self.status['current_case'] = f"CaseID: {case_id}"
+                    self.status['current_case'] = f"CaseID: {case_id}, Location: {location_id}"
                     self.status_queue.put({'type': 'status', 'status': self.status})
                     
-                    writer = None
-                    try:
-                        writer = await self.connect_and_login_async()
-                        
-                        if writer:
-                            result = await self.scan_case_async(writer, case_id, location_id)
-                            self.df_valid.at[index, 'Result'] = result
-                            
-                            if result == "Success":
-                                self.status['success_count'] += 1
-                                self.add_console(f"✅ SUCCESS for {case_id}")
-                            else:
-                                self.status['error_count'] += 1
-                                self.add_console(f"❌ ERROR for {case_id}", is_error=True)
-                            
-                            writer.close()
-                            await writer.wait_closed()
-                        else:
-                            self.df_valid.at[index, 'Result'] = "Error"
-                            self.status['error_count'] += 1
-                            self.add_console(f"❌ No connection - marked as Error", is_error=True)
-                        
-                        self.status['processed_count'] += 1
-                        self.status_queue.put({'type': 'status', 'status': self.status})
-                        
-                    except Exception as e:
-                        self.add_console(f"Failed: {str(e)[:100]}", is_error=True)
-                        self.df_valid.at[index, 'Result'] = "Error"
-                        self.status['processed_count'] += 1
-                        self.status['error_count'] += 1
-                        self.status_queue.put({'type': 'status', 'status': self.status})
+                    # Scan one case (fresh connection)
+                    result = await self.scan_one_case_async(case_id, location_id)
                     
+                    # Update results
+                    self.df_valid.at[index, 'Result'] = result
+                    
+                    if result == "Success":
+                        self.status['success_count'] += 1
+                        self.add_console(f"🎉 SUCCESS for case {index+1}/{self.status['valid_count']}")
+                    else:
+                        self.status['error_count'] += 1
+                        self.add_console(f"❌ ERROR for case {index+1}/{self.status['valid_count']}", is_error=True)
+                    
+                    self.status['processed_count'] += 1
+                    self.status_queue.put({'type': 'status', 'status': self.status})
+                    
+                    # Brief pause between cases
                     await asyncio.sleep(1)
             
             # Mark invalid cases
@@ -262,9 +279,9 @@ class TelnetProcessor:
             
             self.add_console("\n" + "=" * 60)
             self.add_console("PROCESSING COMPLETE")
-            self.add_console(f"Success: {self.status['success_count']}")
-            self.add_console(f"Errors: {self.status['error_count']}")
-            self.add_console(f"Invalid: {self.status['invalid_count']}")
+            self.add_console(f"✅ Successfully scanned: {self.status['success_count']}")
+            self.add_console(f"❌ Failed scans: {self.status['error_count']}")
+            self.add_console(f"⚠️ Invalid format (skipped): {self.status['invalid_count']}")
             self.add_console("=" * 60)
             
             self.status['completed'] = True
@@ -272,7 +289,7 @@ class TelnetProcessor:
             self.status_queue.put({'type': 'complete', 'df_valid': self.df_valid, 'df_invalid': self.df_invalid})
             
         except Exception as e:
-            self.add_console(f"FATAL ERROR: {str(e)}", is_error=True)
+            self.add_console(f"💥 FATAL ERROR: {str(e)}", is_error=True)
             self.status['completed'] = True
             self.status_queue.put({'type': 'status', 'status': self.status})
     
@@ -294,7 +311,6 @@ def send_completion_email(status, df_valid, df_invalid, log_content):
     
     try:
         success_count = len(df_valid[df_valid['Result'] == 'Success']) if not df_valid.empty else 0
-        error_count = len(df_valid[df_valid['Result'] == 'Error']) if not df_valid.empty else 0
         
         subject = f"Telnet Processing Complete - {status['filename']}"
         
@@ -309,10 +325,15 @@ RESULTS:
 - Total Cases: {status['total_count']}
 - Valid Format: {status['valid_count']}
 - Successfully Scanned: {success_count}
-- Failed Scans: {error_count}
+- Failed Scans: {status['error_count']}
 - Invalid Format (Skipped): {status['invalid_count']}
 
-CONSOLE LOG (Last 20 lines):
+VERIFICATION:
+Expected scans: {status['valid_count']}
+Actual scans: {success_count}
+{"✅ MATCHES" if success_count == status['valid_count'] else "⚠️ MISMATCH - Review failed cases"}
+
+CONSOLE LOG:
 {chr(10).join(status.get('console_output', [])[-20:])}
 
 This is an automated message from the Warehouse Telnet System.
@@ -407,7 +428,15 @@ with st.sidebar:
     2. Click Start Processing
     3. Watch console log on right
     4. Results emailed automatically
+    
+    **Connection Strategy:**
+    - NEW connection for EACH case
+    - 2 seconds delay between EACH step
+    - Reads response after each scan
+    - Logs out after each case
     """)
+    
+    st.info("⚡ **Each case takes ~12-15 seconds** (login + scan + logout)")
 
 col1, col2, col3 = st.columns([2, 1, 2])
 
@@ -434,6 +463,12 @@ with col1:
             col_v1.metric("✅ Valid Cases", len(df_valid))
             col_v2.metric("❌ Invalid Cases", len(df_invalid))
             
+            # Estimate time
+            if len(df_valid) > 0:
+                est_seconds = len(df_valid) * 14  # ~14 seconds per case
+                est_minutes = est_seconds / 60
+                st.info(f"⏱️ Estimated time: {est_minutes:.1f} minutes ({len(df_valid)} cases × 14 sec each)")
+            
             with st.expander("Preview Valid Cases"):
                 st.dataframe(df_valid.head(10))
             
@@ -452,7 +487,7 @@ with col1:
                     thread = threading.Thread(target=processor.process, daemon=True)
                     thread.start()
                     st.session_state.processor = processor
-                    st.success(f"✅ Processing started!")
+                    st.success(f"✅ Processing started! Each case gets fresh connection.")
                     st.rerun()
         else:
             st.error("Excel file must contain 'LocationID' column")
@@ -482,6 +517,13 @@ with col2:
         if status.get('valid_count', 0) > 0:
             progress = status.get('processed_count', 0) / status.get('valid_count', 0)
             st.progress(progress)
+        
+        # Show remaining time estimate
+        remaining = status.get('valid_count', 0) - status.get('processed_count', 0)
+        if remaining > 0:
+            remaining_sec = remaining * 14
+            remaining_min = remaining_sec / 60
+            st.caption(f"⏱️ Remaining: ~{remaining_min:.1f} minutes")
         
         if status.get('completed', False) and not status.get('email_sent', False):
             if st.session_state.final_df_valid is not None:
