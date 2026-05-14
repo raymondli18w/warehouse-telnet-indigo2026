@@ -23,7 +23,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for console log
+# Custom CSS
 st.markdown("""
 <style>
     .stButton > button {
@@ -112,14 +112,14 @@ class TelnetProcessor:
         print(log_entry)
     
     async def connect_and_login_async(self):
-        """Async telnet connection"""
+        """Async telnet connection without timeout parameter"""
         self.add_console("=" * 50)
         self.add_console("STARTING TELNET CONNECTION")
         
         try:
-            # Step 1: Connect
+            # Step 1: Connect (no timeout parameter)
             self.add_console(f"Step 1: Connecting to {self.HOST}:{self.PORT}...")
-            reader, writer = await telnetlib3.open_connection(self.HOST, self.PORT, timeout=30)
+            reader, writer = await telnetlib3.open_connection(self.HOST, self.PORT)
             self.add_console(f"✅ Connected successfully!")
             
             # Step 2: Wait 2 seconds
@@ -151,21 +151,23 @@ class TelnetProcessor:
             self.add_console(f"Step 5: Sending menu option {self.MAIN_MENU_1}")
             writer.write(f"{self.MAIN_MENU_1}\r\n")
             await writer.drain()
-            self.add_console(f"✅ Menu option sent")
+            self.add_console(f"✅ Menu option {self.MAIN_MENU_1} sent")
             await asyncio.sleep(self.BETWEEN_COMMANDS_DELAY)
             
             # Step 7: Sub menu
             self.add_console(f"Step 6: Sending menu option {self.SUB_MENU_7}")
             writer.write(f"{self.SUB_MENU_7}\r\n")
             await writer.drain()
-            self.add_console(f"✅ Menu option sent")
+            self.add_console(f"✅ Menu option {self.SUB_MENU_7} sent")
             await asyncio.sleep(self.BETWEEN_COMMANDS_DELAY)
             
             self.add_console("✅ TELNET LOGIN COMPLETE!")
+            self.add_console("=" * 50)
             return writer
             
         except Exception as e:
-            self.add_console(f"❌ TELNET ERROR: {str(e)}", is_error=True)
+            self.add_console(f"TELNET ERROR: {str(e)}", is_error=True)
+            self.add_console(f"Error type: {type(e).__name__}", is_error=True)
             return None
     
     async def scan_case_async(self, writer, case_id, location_id):
@@ -181,11 +183,20 @@ class TelnetProcessor:
             await writer.drain()
             await asyncio.sleep(self.PAUSE_BETWEEN_CASES)
             
+            # Try to read response
+            try:
+                # Read any available data
+                data = await reader.read(1024) if 'reader' in locals() else None
+                if data:
+                    self.add_console(f"Response: {data[:200]}")
+            except:
+                pass
+            
             self.add_console(f"✅ Scan complete")
             return "Success"
             
         except Exception as e:
-            self.add_console(f"❌ Scan error: {str(e)}", is_error=True)
+            self.add_console(f"Scan error: {str(e)}", is_error=True)
             return "Error"
     
     async def process_async(self):
@@ -221,16 +232,20 @@ class TelnetProcessor:
                                 self.add_console(f"✅ SUCCESS for {case_id}")
                             else:
                                 self.status['error_count'] += 1
-                                self.add_console(f"❌ ERROR for {case_id}")
+                                self.add_console(f"❌ ERROR for {case_id}", is_error=True)
                             
                             writer.close()
                             await writer.wait_closed()
+                        else:
+                            self.df_valid.at[index, 'Result'] = "Error"
+                            self.status['error_count'] += 1
+                            self.add_console(f"❌ No connection - marked as Error", is_error=True)
                         
                         self.status['processed_count'] += 1
                         self.status_queue.put({'type': 'status', 'status': self.status})
                         
                     except Exception as e:
-                        self.add_console(f"❌ Failed: {str(e)[:100]}", is_error=True)
+                        self.add_console(f"Failed: {str(e)[:100]}", is_error=True)
                         self.df_valid.at[index, 'Result'] = "Error"
                         self.status['processed_count'] += 1
                         self.status['error_count'] += 1
@@ -238,14 +253,18 @@ class TelnetProcessor:
                     
                     await asyncio.sleep(1)
             
+            # Mark invalid cases
             if not self.df_invalid.empty:
                 if 'Result' not in self.df_invalid.columns:
                     self.df_invalid['Result'] = "Invalid Format"
+                for index in range(len(self.df_invalid)):
+                    self.df_invalid.iloc[index, self.df_invalid.columns.get_loc('Result')] = "Invalid Format - LocationID must be M followed by 7 digits"
             
             self.add_console("\n" + "=" * 60)
             self.add_console("PROCESSING COMPLETE")
             self.add_console(f"Success: {self.status['success_count']}")
             self.add_console(f"Errors: {self.status['error_count']}")
+            self.add_console(f"Invalid: {self.status['invalid_count']}")
             self.add_console("=" * 60)
             
             self.status['completed'] = True
@@ -275,6 +294,7 @@ def send_completion_email(status, df_valid, df_invalid, log_content):
     
     try:
         success_count = len(df_valid[df_valid['Result'] == 'Success']) if not df_valid.empty else 0
+        error_count = len(df_valid[df_valid['Result'] == 'Error']) if not df_valid.empty else 0
         
         subject = f"Telnet Processing Complete - {status['filename']}"
         
@@ -289,11 +309,13 @@ RESULTS:
 - Total Cases: {status['total_count']}
 - Valid Format: {status['valid_count']}
 - Successfully Scanned: {success_count}
-- Failed Scans: {status['error_count']}
-- Invalid Format: {status['invalid_count']}
+- Failed Scans: {error_count}
+- Invalid Format (Skipped): {status['invalid_count']}
 
-CONSOLE LOG:
+CONSOLE LOG (Last 20 lines):
 {chr(10).join(status.get('console_output', [])[-20:])}
+
+This is an automated message from the Warehouse Telnet System.
 """
         
         msg = MIMEMultipart()
@@ -302,18 +324,22 @@ CONSOLE LOG:
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'plain'))
         
+        # Create Excel file
         excel_buffer = BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-            df_valid.to_excel(writer, sheet_name='Valid_Cases', index=False)
-            df_invalid.to_excel(writer, sheet_name='Invalid_Format', index=False)
+            if not df_valid.empty:
+                df_valid.to_excel(writer, sheet_name='Valid_Cases', index=False)
+            if not df_invalid.empty:
+                df_invalid.to_excel(writer, sheet_name='Invalid_Format', index=False)
         
         excel_buffer.seek(0)
         excel_attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         excel_attachment.set_payload(excel_buffer.read())
         encoders.encode_base64(excel_attachment)
-        excel_attachment.add_header('Content-Disposition', 'attachment', filename=f'Results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
+        excel_attachment.add_header('Content-Disposition', 'attachment', filename=f'Telnet_Results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
         msg.attach(excel_attachment)
         
+        # Send email
         with smtplib.SMTP(SMTP_CONFIG["server"], SMTP_CONFIG["port"]) as server:
             server.starttls()
             server.login(SMTP_CONFIG["username"], SMTP_CONFIG["password"])
@@ -408,22 +434,28 @@ with col1:
             col_v1.metric("✅ Valid Cases", len(df_valid))
             col_v2.metric("❌ Invalid Cases", len(df_invalid))
             
+            with st.expander("Preview Valid Cases"):
+                st.dataframe(df_valid.head(10))
+            
             if st.button("🚀 Start Processing", type="primary"):
                 if len(df_valid) > 0:
                     batch_id = datetime.now().strftime('%Y%m%d_%H%M%S')
                     st.session_state.status_queue = queue.Queue()
                     st.session_state.console_queue = queue.Queue()
                     st.session_state.processing_active = True
+                    st.session_state.final_df_valid = None
+                    st.session_state.final_df_invalid = None
+                    st.session_state.console_lines = []
                     
                     processor = TelnetProcessor(df_valid, df_invalid, batch_id, st.session_state.status_queue, st.session_state.console_queue)
                     processor.status['filename'] = uploaded_file.name
                     thread = threading.Thread(target=processor.process, daemon=True)
                     thread.start()
                     st.session_state.processor = processor
-                    st.success("Processing started!")
+                    st.success(f"✅ Processing started!")
                     st.rerun()
         else:
-            st.error("Missing LocationID column")
+            st.error("Excel file must contain 'LocationID' column")
 
 with col2:
     st.subheader("📊 Status")
@@ -442,9 +474,10 @@ with col2:
     
     if st.session_state.current_status:
         status = st.session_state.current_status
-        st.metric("Processed", status.get('processed_count', 0))
-        st.metric("Success", status.get('success_count', 0))
-        st.metric("Errors", status.get('error_count', 0))
+        st.metric("📊 Total", status.get('total_count', 0))
+        st.metric("✅ Processed", status.get('processed_count', 0))
+        st.metric("✔️ Success", status.get('success_count', 0))
+        st.metric("❌ Errors", status.get('error_count', 0))
         
         if status.get('valid_count', 0) > 0:
             progress = status.get('processed_count', 0) / status.get('valid_count', 0)
@@ -452,15 +485,22 @@ with col2:
         
         if status.get('completed', False) and not status.get('email_sent', False):
             if st.session_state.final_df_valid is not None:
-                with st.spinner("Sending email..."):
+                with st.spinner("📧 Sending email..."):
                     log_content = "\n".join(status.get('recent_logs', []))
                     if send_completion_email(status, st.session_state.final_df_valid, st.session_state.final_df_invalid, log_content):
                         status['email_sent'] = True
-                        st.success("Email sent!")
+                        st.success("✅ Email sent!")
                         st.balloons()
+                
+                if st.button("Clear"):
+                    st.session_state.processing_active = False
+                    st.rerun()
+    else:
+        st.info("Waiting to start...")
 
 with col3:
     st.subheader("🖥️ Console Log")
+    
     if st.session_state.console_queue:
         try:
             while True:
@@ -473,7 +513,14 @@ with col3:
     if st.session_state.console_lines:
         st.code("\n".join(st.session_state.console_lines), language="bash")
     else:
-        st.info("Console will appear here...")
+        st.info("Console will appear here when processing starts...")
+    
+    if st.session_state.console_lines:
+        st.download_button(
+            label="📋 Copy Log",
+            data="\n".join(st.session_state.console_lines),
+            file_name=f"console_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        )
 
 if st.session_state.processing_active:
     time.sleep(2)
