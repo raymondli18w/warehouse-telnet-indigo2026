@@ -186,8 +186,8 @@ class TelnetProcessor:
             await writer.drain()
             await asyncio.sleep(self.DELAY_ALL)
             
-            # Step 3: Send LocationID
-            self.add_console(f"Sending LocationID: {MLP}")
+            # Step 3: Send MLP
+            self.add_console(f"Sending MLP: {MLP}")
             writer.write(f"{MLP}\r\n")
             await writer.drain()
             await asyncio.sleep(self.DELAY_ALL)
@@ -246,9 +246,9 @@ class TelnetProcessor:
                 
                 for index, row in self.df_valid.iterrows():
                     case_id = str(row['CaseID']).zfill(20)
-                    MLP = str(row['LocationID']).strip().upper()
+                    MLP = str(row['MLP']).strip().upper()
                     
-                    self.status['current_case'] = f"CaseID: {case_id}, Location: {MLP}"
+                    self.status['current_case'] = f"CaseID: {case_id}, MLP: {MLP}"
                     self.status_queue.put({'type': 'status', 'status': self.status})
                     
                     # Scan one case (fresh connection)
@@ -275,7 +275,7 @@ class TelnetProcessor:
                 if 'Result' not in self.df_invalid.columns:
                     self.df_invalid['Result'] = "Invalid Format"
                 for index in range(len(self.df_invalid)):
-                    self.df_invalid.iloc[index, self.df_invalid.columns.get_loc('Result')] = "Invalid Format - LocationID must be M followed by 7 digits"
+                    self.df_invalid.iloc[index, self.df_invalid.columns.get_loc('Result')] = "Invalid Format - MLP must be M followed by 7 digits"
             
             self.add_console("\n" + "=" * 60)
             self.add_console("PROCESSING COMPLETE")
@@ -424,7 +424,7 @@ with st.sidebar:
     st.divider()
     st.markdown("""
     **Instructions:**
-    1. Upload Excel (CaseID & LocationID)
+    1. Upload Excel (CaseID & MLP)
     2. Click Start Processing
     3. Watch console log on right
     4. Results emailed automatically
@@ -449,11 +449,11 @@ with col1:
         
         if 'CASEID' in df_raw.columns:
             df_raw.rename(columns={'CASEID': 'CaseID'}, inplace=True)
-        if 'LOCATIONID' in df_raw.columns:
-            df_raw.rename(columns={'LOCATIONID': 'LocationID'}, inplace=True)
+        if 'MLP' in df_raw.columns:
+            df_raw.rename(columns={'MLP': 'MLP'}, inplace=True)
         
-        if 'LocationID' in df_raw.columns:
-            df_raw['Valid_Format'] = df_raw['LocationID'].apply(validate_MLP)
+        if 'MLP' in df_raw.columns:
+            df_raw['Valid_Format'] = df_raw['MLP'].apply(validate_MLP)
             df_valid = df_raw[df_raw['Valid_Format'] == True].copy()
             df_invalid = df_raw[df_raw['Valid_Format'] == False].copy()
             df_valid = df_valid.drop(columns=['Valid_Format'])
@@ -490,7 +490,7 @@ with col1:
                     st.success(f"✅ Processing started! Each case gets fresh connection.")
                     st.rerun()
         else:
-            st.error("Excel file must contain 'LocationID' column")
+            st.error("Excel file must contain ' MLP' column")
 
 with col2:
     st.subheader("📊 Status")
