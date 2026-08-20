@@ -161,12 +161,12 @@ class TelnetProcessor:
             self.add_console(f"❌ Telnet connection failed: {str(e)}", is_error=True)
             return None, None
     
-    async def scan_one_case_async(self, case_id, location_id):
+    async def scan_one_case_async(self, case_id, MLP):
         """Complete fresh connection for ONE case - login, scan, logout"""
         self.add_console(f"\n{'='*40}")
         self.add_console(f"STARTING SCAN FOR CASE")
         self.add_console(f"CaseID: {case_id}")
-        self.add_console(f"LocationID: {location_id}")
+        self.add_console(f"MLP: {MLP}")
         self.add_console(f"{'='*40}")
         
         reader = None
@@ -187,8 +187,8 @@ class TelnetProcessor:
             await asyncio.sleep(self.DELAY_ALL)
             
             # Step 3: Send LocationID
-            self.add_console(f"Sending LocationID: {location_id}")
-            writer.write(f"{location_id}\r\n")
+            self.add_console(f"Sending LocationID: {MLP}")
+            writer.write(f"{MLP}\r\n")
             await writer.drain()
             await asyncio.sleep(self.DELAY_ALL)
             
@@ -246,13 +246,13 @@ class TelnetProcessor:
                 
                 for index, row in self.df_valid.iterrows():
                     case_id = str(row['CaseID']).zfill(20)
-                    location_id = str(row['LocationID']).strip().upper()
+                    MLP = str(row['LocationID']).strip().upper()
                     
-                    self.status['current_case'] = f"CaseID: {case_id}, Location: {location_id}"
+                    self.status['current_case'] = f"CaseID: {case_id}, Location: {MLP}"
                     self.status_queue.put({'type': 'status', 'status': self.status})
                     
                     # Scan one case (fresh connection)
-                    result = await self.scan_one_case_async(case_id, location_id)
+                    result = await self.scan_one_case_async(case_id, MLP)
                     
                     # Update results
                     self.df_valid.at[index, 'Result'] = result
@@ -372,10 +372,10 @@ This is an automated message from the Warehouse Telnet System.
         return False
 
 # ============= VALIDATION FUNCTION =============
-def validate_location_id(location_id):
-    if pd.isna(location_id) or location_id == '':
+def validate_MLP(MLP):
+    if pd.isna(MLP) or MLP == '':
         return False
-    location_str = str(location_id).strip().upper()
+    location_str = str(MLP).strip().upper()
     pattern = r'^M\d{7}$'
     return bool(re.match(pattern, location_str))
 
@@ -453,7 +453,7 @@ with col1:
             df_raw.rename(columns={'LOCATIONID': 'LocationID'}, inplace=True)
         
         if 'LocationID' in df_raw.columns:
-            df_raw['Valid_Format'] = df_raw['LocationID'].apply(validate_location_id)
+            df_raw['Valid_Format'] = df_raw['LocationID'].apply(validate_MLP)
             df_valid = df_raw[df_raw['Valid_Format'] == True].copy()
             df_invalid = df_raw[df_raw['Valid_Format'] == False].copy()
             df_valid = df_valid.drop(columns=['Valid_Format'])
